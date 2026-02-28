@@ -28,6 +28,7 @@ let latestQrAt = null;
 let isInitializing = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let clientState = 'idle';
 
 function getPublicBaseUrl() {
     if (PUBLIC_BASE_URL) {
@@ -80,6 +81,13 @@ function scheduleReinitialize(reason = 'unknown') {
             scheduleReinitialize(`retry_failed:${reason}`);
         }
     }, delayMs);
+}
+
+function clearReconnectTimer() {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
 }
 
 async function saveQrImage(qrText) {
@@ -222,17 +230,19 @@ const client = new Client({
 });
 
 async function initializeClient(trigger = 'startup') {
-    if (isInitializing) {
+    if (isInitializing || ['starting', 'qr', 'authenticated', 'ready'].includes(clientState)) {
         console.log(`ℹ️ Inicialización ya en progreso. Trigger ignorado: ${trigger}`);
         return;
     }
 
     isInitializing = true;
+    clientState = 'starting';
     console.log(`⏳ Inicializando cliente de WhatsApp... trigger=${trigger}`);
 
     try {
         await client.initialize();
     } catch (error) {
+        clientState = 'idle';
         console.error('❌ Error inicializando cliente de WhatsApp:', error.message);
         if (isRecoverableWhatsAppError(error)) {
             scheduleReinitialize(`initialize:${trigger}`);
@@ -410,6 +420,8 @@ async function processMessage(message, eventName) {
 
 // Generar QR para autenticación
 client.on('qr', async (qr) => {
+    clientState = 'qr';
+    clearReconnectTimer();
     console.log('\n🔍 ESCANEA ESTE QR CON TU TELÉFONO:\n');
     qrcodeTerminal.generate(qr, { small: true });
     try {
@@ -425,6 +437,8 @@ client.on('qr', async (qr) => {
 
 // Autenticación exitosa
 client.on('authenticated', () => {
+    clientState = 'authenticated';
+    clearReconnectTimer();
     reconnectAttempts = 0;
     console.log('✅ Autenticación exitosa!');
     console.log(`✅ Sesión guardada en: ${SESSION_DIR}`);
@@ -432,6 +446,8 @@ client.on('authenticated', () => {
 
 // Error de autenticación
 client.on('auth_failure', (msg) => {
+    clientState = 'auth_failure';
+    clearReconnectTimer();
     console.error('❌ Error de autenticación:', msg);
     console.log(`💡 SOLUCIÓN: Borra la carpeta ${SESSION_DIR} y vuelve a escanear el QR`);
 });
@@ -443,6 +459,8 @@ client.on('loading_screen', (percent, message) => {
 
 // Cliente listo
 client.on('ready', async () => {
+    clientState = 'ready';
+    clearReconnectTimer();
     reconnectAttempts = 0;
     console.log('\n✅ ¡CLIENTE DE WHATSAPP CONECTADO Y LISTO!');
     console.log(`📂 JSONs: ${path.resolve(JSON_DIR)}`);
@@ -482,6 +500,16 @@ client.on('ready', async () => {
 
 // Manejo de desconexión
 client.on('disconnected', (reason) => {
+    clientState = 'disconnected';
+    if (String(reason || '').toUpperCase() === 'LOGOUT') {
+        clearReconnectTimer();
+        reconnectAttempts = 0;
+        setTimeout(() => {
+            initializeClient('logout');
+        }, 3000);
+        return;
+    }
+    scheduleReinitialize(`disconnected:${reason}`);
     console.log('⚠️  Desconectado:', reason);
 });
 
@@ -533,22 +561,18 @@ console.log('\n⏳ Inicializando...\n');
 
 process.on('unhandledRejection', (error) => {
     console.error('❌ Unhandled rejection:', error?.message || error);
-    if (isRecoverableWhatsAppError(error)) {
+    if (isRecoverableWhatsAppError(error) && clientState === 'starting') {
         scheduleReinitialize('unhandledRejection');
     }
 });
 
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught exception:', error?.message || error);
-    if (isRecoverableWhatsAppError(error)) {
+    if (isRecoverableWhatsAppError(error) && clientState === 'starting') {
         scheduleReinitialize('uncaughtException');
         return;
     }
     process.exit(1);
-});
-
-client.on('disconnected', (reason) => {
-    scheduleReinitialize(`disconnected:${reason}`);
 });
 
 initializeClient();
