@@ -18,3 +18,4 @@ Pillow
 # Utilidades
 python-dotenv
 requests
+watchdog

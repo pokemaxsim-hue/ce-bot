@@ -9,6 +9,8 @@ from firebase_admin import credentials, firestore, storage
 from datetime import datetime
 from typing import Optional, Dict, Any
 from io import BytesIO
+import base64
+import json
 import os
 import re
 from dotenv import load_dotenv
@@ -19,6 +21,33 @@ load_dotenv()
 
 class FirebaseManager:
     """Gestor centralizado para operaciones de Firebase Storage y Firestore."""
+
+    @staticmethod
+    def _load_firebase_credentials(service_account_path: str):
+        inline_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
+        inline_b64 = os.getenv('FIREBASE_SERVICE_ACCOUNT_BASE64')
+
+        if service_account_path and os.path.isfile(service_account_path):
+            return credentials.Certificate(service_account_path), service_account_path
+
+        if inline_json:
+            try:
+                return credentials.Certificate(json.loads(inline_json)), 'FIREBASE_SERVICE_ACCOUNT_JSON'
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"❌ FIREBASE_SERVICE_ACCOUNT_JSON no es un JSON válido: {exc}") from exc
+
+        if inline_b64:
+            try:
+                decoded = base64.b64decode(inline_b64).decode('utf-8')
+                return credentials.Certificate(json.loads(decoded)), 'FIREBASE_SERVICE_ACCOUNT_BASE64'
+            except Exception as exc:
+                raise ValueError(f"❌ FIREBASE_SERVICE_ACCOUNT_BASE64 no es válido: {exc}") from exc
+
+        raise ValueError(
+            "❌ No se encontraron credenciales de Firebase. "
+            "Configura FIREBASE_SERVICE_ACCOUNT_JSON o FIREBASE_SERVICE_ACCOUNT_BASE64, "
+            "o monta serviceAccountKey.json en el contenedor."
+        )
     
     def __init__(self, service_account_path: str = 'serviceAccountKey.json'):
         """
@@ -34,16 +63,19 @@ class FirebaseManager:
         
         # Inicializar Firebase solo si no está inicializado
         if not firebase_admin._apps:
-            cred = credentials.Certificate(service_account_path)
+            cred, cred_source = self._load_firebase_credentials(service_account_path)
             firebase_admin.initialize_app(cred, {
                 'storageBucket': storage_bucket
             })
+        else:
+            cred_source = 'firebase_admin_app_existente'
         
         self.db = firestore.client()
         self.bucket = storage.bucket()
         
         print("✅ Firebase inicializado correctamente")
         print(f"   Storage Bucket: {storage_bucket}")
+        print(f"   Credenciales: {cred_source}")
     
     @staticmethod
     def _sanitize_doc_id(text: str) -> str:

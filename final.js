@@ -3,11 +3,19 @@ const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 
+const DATA_DIR = path.resolve(process.env.DATA_DIR || '.');
+const HEADLESS = process.env.WHATSAPP_HEADLESS !== 'false';
+const CHROMIUM_PATH = process.env.PUPPETEER_EXECUTABLE_PATH;
+
 // Directorios donde se guardarán los datos
-const BASE_DIR = './anuncios_empleo';
-const IMAGES_DIR = path.join(BASE_DIR, 'imagenes');
-const JSON_DIR = path.join(BASE_DIR, 'mensajes');
-const SESSION_DIR = './whatsapp_session';
+const BASE_DIR = path.resolve(DATA_DIR, process.env.WHATSAPP_BASE_DIR || 'anuncios_empleo');
+const IMAGES_DIR = process.env.WHATSAPP_IMAGES_DIR
+    ? path.resolve(DATA_DIR, process.env.WHATSAPP_IMAGES_DIR)
+    : path.join(BASE_DIR, 'imagenes');
+const JSON_DIR = process.env.WHATSAPP_MESSAGES_DIR
+    ? path.resolve(DATA_DIR, process.env.WHATSAPP_MESSAGES_DIR)
+    : path.join(BASE_DIR, 'mensajes');
+const SESSION_DIR = path.resolve(DATA_DIR, process.env.WHATSAPP_SESSION_DIR || 'whatsapp_session');
 
 // Crear directorios necesarios
 function setupDirectories() {
@@ -26,7 +34,8 @@ const client = new Client({
         dataPath: SESSION_DIR
     }),
     puppeteer: {
-        headless: false,
+        headless: HEADLESS,
+        executablePath: CHROMIUM_PATH || undefined,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -213,13 +222,13 @@ client.on('qr', (qr) => {
 // Autenticación exitosa
 client.on('authenticated', () => {
     console.log('✅ Autenticación exitosa!');
-    console.log('✅ Sesión guardada en: ./whatsapp_session/');
+    console.log(`✅ Sesión guardada en: ${SESSION_DIR}`);
 });
 
 // Error de autenticación
 client.on('auth_failure', (msg) => {
     console.error('❌ Error de autenticación:', msg);
-    console.log('💡 SOLUCIÓN: Borra la carpeta ./whatsapp_session/ y vuelve a escanear el QR');
+    console.log(`💡 SOLUCIÓN: Borra la carpeta ${SESSION_DIR} y vuelve a escanear el QR`);
 });
 
 // Loading session
@@ -304,11 +313,15 @@ setupDirectories();
 // Iniciar el cliente
 console.log('🚀 Iniciando WhatsApp Downloader con JSON Individual...');
 console.log('\n💡 CARACTERÍSTICAS:');
-console.log('   ✅ Sesión persistente en ./whatsapp_session/');
-console.log('   ✅ UN JSON por cada mensaje en ./anuncios_empleo/mensajes/');
-console.log('   ✅ Imágenes en ./anuncios_empleo/imagenes/');
+console.log(`   ✅ Sesión persistente en ${SESSION_DIR}`);
+console.log(`   ✅ UN JSON por cada mensaje en ${JSON_DIR}`);
+console.log(`   ✅ Imágenes en ${IMAGES_DIR}`);
 console.log('   ✅ Detecta TODOS los mensajes (propios y externos)');
 console.log('   ✅ Cada publicación tiene su propio archivo JSON');
+console.log(`   ✅ Headless: ${HEADLESS}`);
+if (CHROMIUM_PATH) {
+    console.log(`   ✅ Chromium: ${CHROMIUM_PATH}`);
+}
 console.log('\n⏳ Inicializando...\n');
 
 client.initialize();

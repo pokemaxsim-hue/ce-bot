@@ -15,6 +15,10 @@ import json
 
 from main import JobAnalyzerFirebase
 
+DATA_DIR = os.getenv("DATA_DIR", ".")
+DEFAULT_OUTPUT_FOLDER = os.path.join(DATA_DIR, "resultados")
+DEFAULT_SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "serviceAccountKey.json")
+
 
 class BatchMultiFormatProcessor:
     """
@@ -28,8 +32,8 @@ class BatchMultiFormatProcessor:
     
     def __init__(
         self,
-        service_account_path: str = 'serviceAccountKey.json',
-        output_folder: str = 'resultados',
+        service_account_path: str = DEFAULT_SERVICE_ACCOUNT_PATH,
+        output_folder: str = DEFAULT_OUTPUT_FOLDER,
         auto_save_results: bool = True
     ):
         """

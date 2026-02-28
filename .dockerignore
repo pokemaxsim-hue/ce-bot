@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.venv
+venv
+__pycache__/
+*.pyc
+node_modules/
+.wwebjs_cache/
+anuncios_empleo/
+resultados/
+whatsapp_session/
+serviceAccountKey.json
+rentals_analyzed.json
+tmp_*.txt

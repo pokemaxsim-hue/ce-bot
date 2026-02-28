@@ -21,10 +21,14 @@ from components.ai_config import load_ai_config
 from components.geolocation import get_location_details
 from components.municipios_utils import load_municipios, get_departamento_by_city
 
+DATA_DIR = os.getenv("DATA_DIR", ".")
+DEFAULT_RESULTS_DIR = os.path.join(DATA_DIR, "resultados")
+DEFAULT_SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH", "serviceAccountKey.json")
+
 
 class JobAnalyzerFirebase:
 
-    def __init__(self, service_account_path: str = 'serviceAccountKey.json'):
+    def __init__(self, service_account_path: str = DEFAULT_SERVICE_ACCOUNT_PATH):
         self.image_converter = ImageConverter()
         self.ollama_analyzer = OllamaLocalAnalyzer()
         # ConfiguraciÃ³n y proveedores de IA
@@ -47,7 +51,7 @@ class JobAnalyzerFirebase:
         print("âœ… JobAnalyzerFirebase inicializado")
 
     def _load_local_jobs(self) -> List[Dict[str, Any]]:
-        path = os.path.join('resultados', 'jobs_subidos.json')
+        path = os.path.join(DEFAULT_RESULTS_DIR, 'jobs_subidos.json')
         # Asegurar que exista carpeta y archivo
         folder = os.path.dirname(path)
         if folder and not os.path.isdir(folder):
@@ -63,7 +67,7 @@ class JobAnalyzerFirebase:
             return []
 
     def _save_local_jobs(self, jobs: List[Dict[str, Any]]):
-        path = os.path.join('resultados', 'jobs_subidos.json')
+        path = os.path.join(DEFAULT_RESULTS_DIR, 'jobs_subidos.json')
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(jobs, f, ensure_ascii=False, indent=2)
 

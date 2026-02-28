@@ -7,6 +7,7 @@ VERSIÓN CORREGIDA: Pasa el texto del mensaje al analizar imágenes.
 
 import time
 import json
+import os
 import threading
 from queue import Queue
 from pathlib import Path
@@ -14,6 +15,16 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from batch_image_processor import BatchMultiFormatProcessor
+
+DATA_DIR = os.getenv("DATA_DIR", ".")
+DEFAULT_MESSAGES_FOLDER = os.getenv(
+    "WHATSAPP_MESSAGES_DIR",
+    os.path.join(DATA_DIR, "anuncios_empleo", "mensajes")
+)
+DEFAULT_IMAGES_FOLDER = os.getenv(
+    "WHATSAPP_IMAGES_DIR",
+    os.path.join(DATA_DIR, "anuncios_empleo", "imagenes")
+)
 
 
 class RealTimeFolderWatcher(FileSystemEventHandler):
@@ -70,8 +81,8 @@ class RealTimeProcessor:
     """
     Administra la cola y el procesamiento continuo de mensajes en tiempo real.
     """
-    def __init__(self, messages_folder: str = "anuncios_empleo/mensajes", 
-                 images_folder: str = "anuncios_empleo/imagenes"):
+    def __init__(self, messages_folder: str = DEFAULT_MESSAGES_FOLDER,
+                 images_folder: str = DEFAULT_IMAGES_FOLDER):
         self.messages_folder = messages_folder
         self.images_folder = images_folder
         self.processor = BatchMultiFormatProcessor()
@@ -222,8 +233,8 @@ class RealTimeProcessor:
         return self.processor._process_single_file(file_info)
 
 
-def iniciar_servidor(messages_folder: str = "anuncios_empleo/mensajes",
-                     images_folder: str = "anuncios_empleo/imagenes"):
+def iniciar_servidor(messages_folder: str = DEFAULT_MESSAGES_FOLDER,
+                     images_folder: str = DEFAULT_IMAGES_FOLDER):
     """
     Punto de entrada para iniciar el servidor en tiempo real.
     
