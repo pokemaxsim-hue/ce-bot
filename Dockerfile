@@ -2,6 +2,7 @@ FROM node:20-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DATA_DIR=/data \
+    PATH=/opt/venv/bin:$PATH \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
@@ -30,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     python3 \
     python3-pip \
+    python3-venv \
     tini \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -40,7 +42,9 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
