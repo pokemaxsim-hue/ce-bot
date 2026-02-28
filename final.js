@@ -56,6 +56,10 @@ function isRecoverableWhatsAppError(error) {
     return (
         message.includes('execution context was destroyed') ||
         message.includes('most likely because of a navigation') ||
+        message.includes('failed to add page binding') ||
+        message.includes('already exists') ||
+        message.includes('registrationutils') ||
+        message.includes('evaluation failed') ||
         message.includes('protocol error') ||
         message.includes('target closed') ||
         message.includes('session closed') ||
@@ -69,17 +73,13 @@ function scheduleReinitialize(reason = 'unknown') {
     }
 
     reconnectAttempts += 1;
-    const delayMs = Math.min(30000, 5000 * reconnectAttempts);
+    const delayMs = Math.min(15000, 3000 * reconnectAttempts);
     console.log(`⚠️ Reintentando inicialización en ${Math.round(delayMs / 1000)}s. Motivo: ${reason}`);
 
-    reconnectTimer = setTimeout(async () => {
+    reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
-        try {
-            await initializeClient(`retry:${reason}`);
-        } catch (error) {
-            console.error('❌ Falló el reintento de inicialización:', error.message);
-            scheduleReinitialize(`retry_failed:${reason}`);
-        }
+        console.log(`[FINAL] Exiting process for clean restart. Reason: ${reason}`);
+        process.exit(1);
     }, delayMs);
 }
 
@@ -231,7 +231,7 @@ const client = new Client({
 
 async function initializeClient(trigger = 'startup') {
     if (isInitializing || ['starting', 'qr', 'authenticated', 'ready'].includes(clientState)) {
-        console.log(`ℹ️ Inicialización ya en progreso. Trigger ignorado: ${trigger}`);
+        console.log(`[FINAL] Initialization skipped. Trigger: ${trigger}`);
         return;
     }
 
@@ -501,14 +501,8 @@ client.on('ready', async () => {
 // Manejo de desconexión
 client.on('disconnected', (reason) => {
     clientState = 'disconnected';
-    if (String(reason || '').toUpperCase() === 'LOGOUT') {
-        clearReconnectTimer();
-        reconnectAttempts = 0;
-        setTimeout(() => {
-            initializeClient('logout');
-        }, 3000);
-        return;
-    }
+    clearReconnectTimer();
+    reconnectAttempts = 0;
     scheduleReinitialize(`disconnected:${reason}`);
     console.log('⚠️  Desconectado:', reason);
 });
@@ -561,14 +555,14 @@ console.log('\n⏳ Inicializando...\n');
 
 process.on('unhandledRejection', (error) => {
     console.error('❌ Unhandled rejection:', error?.message || error);
-    if (isRecoverableWhatsAppError(error) && clientState === 'starting') {
+    if (isRecoverableWhatsAppError(error)) {
         scheduleReinitialize('unhandledRejection');
     }
 });
 
 process.on('uncaughtException', (error) => {
     console.error('❌ Uncaught exception:', error?.message || error);
-    if (isRecoverableWhatsAppError(error) && clientState === 'starting') {
+    if (isRecoverableWhatsAppError(error)) {
         scheduleReinitialize('uncaughtException');
         return;
     }
