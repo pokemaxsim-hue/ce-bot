@@ -1,11 +1,17 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const qrcodeTerminal = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || '.');
 const HEADLESS = process.env.WHATSAPP_HEADLESS !== 'false';
 const CHROMIUM_PATH = process.env.PUPPETEER_EXECUTABLE_PATH;
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const QR_DIR = path.resolve(DATA_DIR, process.env.QR_OUTPUT_DIR || 'qr');
+const QR_IMAGE_PATH = path.join(QR_DIR, 'latest.png');
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 
 // Directorios donde se guardarán los datos
 const BASE_DIR = path.resolve(DATA_DIR, process.env.WHATSAPP_BASE_DIR || 'anuncios_empleo');
@@ -17,9 +23,141 @@ const JSON_DIR = process.env.WHATSAPP_MESSAGES_DIR
     : path.join(BASE_DIR, 'mensajes');
 const SESSION_DIR = path.resolve(DATA_DIR, process.env.WHATSAPP_SESSION_DIR || 'whatsapp_session');
 
+let latestQr = null;
+let latestQrAt = null;
+
+function getPublicBaseUrl() {
+    if (PUBLIC_BASE_URL) {
+        return PUBLIC_BASE_URL;
+    }
+
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+        return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+
+    return `http://localhost:${PORT}`;
+}
+
+function getQrLinks() {
+    const baseUrl = getPublicBaseUrl();
+    return {
+        page: `${baseUrl}/qr`,
+        image: `${baseUrl}/qr/latest.png`,
+        json: `${baseUrl}/qr/latest.json`
+    };
+}
+
+async function saveQrImage(qrText) {
+    await QRCode.toFile(QR_IMAGE_PATH, qrText, {
+        type: 'png',
+        width: 420,
+        margin: 2
+    });
+    latestQr = qrText;
+    latestQrAt = new Date().toISOString();
+}
+
+function sendJson(res, statusCode, payload) {
+    res.writeHead(statusCode, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store'
+    });
+    res.end(JSON.stringify(payload, null, 2));
+}
+
+function startStatusServer() {
+    const server = http.createServer((req, res) => {
+        const route = (req.url || '/').split('?')[0];
+
+        if (route === '/healthz') {
+            return sendJson(res, 200, {
+                ok: true,
+                whatsappReady: Boolean(client.info),
+                latestQrAt
+            });
+        }
+
+        if (route === '/qr/latest.json') {
+            return sendJson(res, latestQr ? 200 : 404, {
+                ok: Boolean(latestQr),
+                latestQrAt,
+                links: getQrLinks()
+            });
+        }
+
+        if (route === '/qr/latest.png') {
+            if (!fs.existsSync(QR_IMAGE_PATH)) {
+                res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('QR no disponible todavia');
+                return;
+            }
+
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Cache-Control': 'no-store'
+            });
+            fs.createReadStream(QR_IMAGE_PATH).pipe(res);
+            return;
+        }
+
+        if (route === '/qr') {
+            const links = getQrLinks();
+            const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="15">
+  <title>WhatsApp QR</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7f9; color: #111; }
+    .card { max-width: 520px; margin: 0 auto; background: white; padding: 24px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+    img { width: 100%; height: auto; background: white; border: 1px solid #ddd; border-radius: 12px; }
+    code { word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>QR de WhatsApp</h1>
+    <p>Recarga cada 15 segundos.</p>
+    <img src="/qr/latest.png?t=${encodeURIComponent(latestQrAt || 'pending')}" alt="QR de WhatsApp">
+    <p>Actualizado: ${latestQrAt || 'pendiente'}</p>
+    <p>Imagen directa: <a href="${links.image}">${links.image}</a></p>
+  </div>
+</body>
+</html>`;
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+            res.end(html);
+            return;
+        }
+
+        if (route === '/') {
+            return sendJson(res, 200, {
+                ok: true,
+                links: {
+                    health: `${getPublicBaseUrl()}/healthz`,
+                    qrPage: getQrLinks().page,
+                    qrImage: getQrLinks().image,
+                    qrJson: getQrLinks().json
+                }
+            });
+        }
+
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Not found');
+    });
+
+    server.listen(PORT, '0.0.0.0', () => {
+        const links = getQrLinks();
+        console.log(`🌐 Servidor HTTP listo en puerto ${PORT}`);
+        console.log(`   QR page: ${links.page}`);
+        console.log(`   QR image: ${links.image}`);
+    });
+}
+
 // Crear directorios necesarios
 function setupDirectories() {
-    const dirs = [BASE_DIR, IMAGES_DIR, JSON_DIR, SESSION_DIR];
+    const dirs = [BASE_DIR, IMAGES_DIR, JSON_DIR, SESSION_DIR, QR_DIR];
     dirs.forEach(dir => {
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
@@ -213,9 +351,17 @@ async function processMessage(message, eventName) {
 }
 
 // Generar QR para autenticación
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
     console.log('\n🔍 ESCANEA ESTE QR CON TU TELÉFONO:\n');
-    qrcode.generate(qr, { small: true });
+    qrcodeTerminal.generate(qr, { small: true });
+    try {
+        await saveQrImage(qr);
+        const links = getQrLinks();
+        console.log(`🖼️ QR image: ${links.image}`);
+        console.log(`🔗 QR page: ${links.page}`);
+    } catch (error) {
+        console.error('❌ No se pudo generar la imagen del QR:', error.message);
+    }
     console.log('\n📱 Abre WhatsApp > Menú > Dispositivos vinculados\n');
 });
 
@@ -309,6 +455,7 @@ client.on('message_create', async (message) => {
 
 // Configurar directorios al inicio
 setupDirectories();
+startStatusServer();
 
 // Iniciar el cliente
 console.log('🚀 Iniciando WhatsApp Downloader con JSON Individual...');
