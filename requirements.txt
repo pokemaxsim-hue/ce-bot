@@ -1,0 +1,20 @@
+# Flask y dependencias web
+flask
+werkzeug
+gunicorn
+
+# Firebase
+firebase-admin
+google-cloud-firestore
+google-cloud-storage
+
+# Procesamiento de imágenes
+Pillow
+
+# IA y procesamiento (solo si usas estas librerías)
+# anthropic
+# openai
+
+# Utilidades
+python-dotenv
+requests
