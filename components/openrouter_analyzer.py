@@ -155,7 +155,7 @@ class OpenRouterAnalyzer:
         full_prompt = f"{prompt}\n\nTexto a analizar:\n{text}"
 
         payload = {
-            "model": model or "openai/gpt-4o-mini",
+            "model": model or "minimax/minimax-m2.5",
             "messages": [
                 {"role": "user", "content": full_prompt}
             ],
@@ -222,7 +222,7 @@ class OpenRouterAnalyzer:
         )
 
         payload = {
-            "model": model or "openai/gpt-4o-mini",
+            "model": model or "minimax/minimax-m2.5",
             "messages": [
                 {"role": "system", "content": instrucciones},
                 {"role": "user", "content": texto_datos},

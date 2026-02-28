@@ -5,7 +5,7 @@
   },
   "text": {
     "provider": "openrouter",
-    "model": "x-ai/grok-4.1-fast:free"
+    "model": "minimax/minimax-m2.5"
   },
   "providers": {
     "ollama": {
