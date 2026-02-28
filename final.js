@@ -25,6 +25,9 @@ const SESSION_DIR = path.resolve(DATA_DIR, process.env.WHATSAPP_SESSION_DIR || '
 
 let latestQr = null;
 let latestQrAt = null;
+let isInitializing = false;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
 
 function getPublicBaseUrl() {
     if (PUBLIC_BASE_URL) {
@@ -45,6 +48,38 @@ function getQrLinks() {
         image: `${baseUrl}/qr/latest.png`,
         json: `${baseUrl}/qr/latest.json`
     };
+}
+
+function isRecoverableWhatsAppError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+        message.includes('execution context was destroyed') ||
+        message.includes('most likely because of a navigation') ||
+        message.includes('protocol error') ||
+        message.includes('target closed') ||
+        message.includes('session closed') ||
+        message.includes('navigation')
+    );
+}
+
+function scheduleReinitialize(reason = 'unknown') {
+    if (reconnectTimer) {
+        return;
+    }
+
+    reconnectAttempts += 1;
+    const delayMs = Math.min(30000, 5000 * reconnectAttempts);
+    console.log(`⚠️ Reintentando inicialización en ${Math.round(delayMs / 1000)}s. Motivo: ${reason}`);
+
+    reconnectTimer = setTimeout(async () => {
+        reconnectTimer = null;
+        try {
+            await initializeClient(`retry:${reason}`);
+        } catch (error) {
+            console.error('❌ Falló el reintento de inicialización:', error.message);
+            scheduleReinitialize(`retry_failed:${reason}`);
+        }
+    }, delayMs);
 }
 
 async function saveQrImage(qrText) {
@@ -185,6 +220,29 @@ const client = new Client({
         ]
     }
 });
+
+async function initializeClient(trigger = 'startup') {
+    if (isInitializing) {
+        console.log(`ℹ️ Inicialización ya en progreso. Trigger ignorado: ${trigger}`);
+        return;
+    }
+
+    isInitializing = true;
+    console.log(`⏳ Inicializando cliente de WhatsApp... trigger=${trigger}`);
+
+    try {
+        await client.initialize();
+    } catch (error) {
+        console.error('❌ Error inicializando cliente de WhatsApp:', error.message);
+        if (isRecoverableWhatsAppError(error)) {
+            scheduleReinitialize(`initialize:${trigger}`);
+        } else {
+            throw error;
+        }
+    } finally {
+        isInitializing = false;
+    }
+}
 
 // Función para generar nombre de archivo único
 function generateFileName(contact, mimetype, timestamp) {
@@ -367,6 +425,7 @@ client.on('qr', async (qr) => {
 
 // Autenticación exitosa
 client.on('authenticated', () => {
+    reconnectAttempts = 0;
     console.log('✅ Autenticación exitosa!');
     console.log(`✅ Sesión guardada en: ${SESSION_DIR}`);
 });
@@ -384,6 +443,7 @@ client.on('loading_screen', (percent, message) => {
 
 // Cliente listo
 client.on('ready', async () => {
+    reconnectAttempts = 0;
     console.log('\n✅ ¡CLIENTE DE WHATSAPP CONECTADO Y LISTO!');
     console.log(`📂 JSONs: ${path.resolve(JSON_DIR)}`);
     console.log(`📂 Imágenes: ${path.resolve(IMAGES_DIR)}`);
@@ -471,7 +531,27 @@ if (CHROMIUM_PATH) {
 }
 console.log('\n⏳ Inicializando...\n');
 
-client.initialize();
+process.on('unhandledRejection', (error) => {
+    console.error('❌ Unhandled rejection:', error?.message || error);
+    if (isRecoverableWhatsAppError(error)) {
+        scheduleReinitialize('unhandledRejection');
+    }
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught exception:', error?.message || error);
+    if (isRecoverableWhatsAppError(error)) {
+        scheduleReinitialize('uncaughtException');
+        return;
+    }
+    process.exit(1);
+});
+
+client.on('disconnected', (reason) => {
+    scheduleReinitialize(`disconnected:${reason}`);
+});
+
+initializeClient();
 
 // Manejo de cierre correcto
 process.on('SIGINT', async () => {
